@@ -22,8 +22,7 @@
 
 <style>
   :root {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-      Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-family: 'Helvetica Neue', sans-serif;
   }
 
   main {
@@ -33,6 +32,8 @@
   }
 
   img {
+    @apply mx-auto;
+
     height: 16rem;
     width: 16rem;
   }

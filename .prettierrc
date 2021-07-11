@@ -1,0 +1,10 @@
+{
+  "trailingComma": "all",
+  "proseWrap": "always",
+  "endOfLine": "lf",
+  "svelteStrictMode": true,
+  "svelteBracketNewLine": true,
+  "semi": false,
+  "singleQuote": true,
+  "useTabs": false
+}
