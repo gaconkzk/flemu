@@ -28,7 +28,9 @@ macro_rules! console_log {
 
 #[wasm_bindgen]
 pub fn make_nes(canvas_id: &str) {
-  console_log!("Hello {}!", canvas_id);
+  unsafe {
+    console_log!("Hello {}!", canvas_id);
+  }
   CPU.lock().unwrap().reset();
 }
 
