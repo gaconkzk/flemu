@@ -12,5 +12,6 @@
   "svelte.plugin.css.enable": false,
   "[rust]": {
     "editor.formatOnSave": true
-  }
+  },
+  "rust-analyzer.linkedProjects": ["crates\\hello\\Cargo.toml"]
 }

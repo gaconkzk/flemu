@@ -15,6 +15,7 @@ bitflags! {
   ///  | +--------------- Overflow Flag
   ///  +----------------- Negative Flag
   ///
+  #[wasm_bindgen]
   pub struct CpuFlags: u8 {
     const CARRY             = 0b00000001;
     const ZERO              = 0b00000010;
@@ -48,7 +49,8 @@ const STACK_RESET: u8 = 0xfd;
 
      LDA $8000   <=>    ad 00 80
 */
-#[derive(Debug)]
+#[wasm_bindgen]
+#[derive(Copy, Clone)]
 pub struct CPU {
   // accumulator
   pub register_a: u8,
@@ -120,6 +122,7 @@ pub enum AddressingMode {
   Indirect_Y,
   NoneAddressing,
 }
+use wasm_bindgen::prelude::*;
 
 impl CPU {
   pub fn new() -> Self {
@@ -212,10 +215,19 @@ impl CPU {
   }
 
   pub fn run(&mut self) {
+    self.run_with_callback(|_| {});
+  }
+
+  pub fn run_with_callback<F>(&mut self, mut callback: F)
+  where
+    F: FnMut(&mut CPU),
+  {
     let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
     // TODO - we might have run as address in future
     self.program_counter = self.mem_read_u16(0xFFFC);
     loop {
+      callback(self);
+
       let code = self.mem_read(self.program_counter);
       self.program_counter += 1;
       let program_counter_state = self.program_counter;

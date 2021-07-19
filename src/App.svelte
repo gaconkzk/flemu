@@ -1,15 +1,19 @@
 <script lang="ts">
-	import init, { greet } from 'hello'
+	import { onMount } from 'svelte'
+	import init, { make_nes } from 'hello'
 
-	console.log('call init')
-	init().then((m) => {
-		// greet('hihihi')
+	onMount(async () => {
+		await init()
+		// send canvas id to wasm
+		make_nes('wasm_canvas')
 	})
+
 </script>
 
 <main>
-  <div class="bg-orange-400 w-200 h-200 mx-auto">
-		wasm playground
+	<h1 class="text-2xl font-bold">wasm playground</h1>
+  <div id="wasm" class="bg-orange-400">
+		<canvas id="wasm_canvas" class="w-200 h-200 mx-auto" />
 	</div>
 </main>
 
