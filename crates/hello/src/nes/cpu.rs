@@ -2,6 +2,8 @@ use crate::nes::opcodes;
 use bitflags::bitflags;
 use std::collections::HashMap;
 
+use crate::color::Color;
+
 bitflags! {
   /// # Status Register (P) http://wiki.nesdev.com/w/index.php/Status_flags
   ///
@@ -26,6 +28,37 @@ bitflags! {
     const OVERFLOW          = 0b01000000;
     const NEGATIVE          = 0b10000000;
   }
+}
+
+fn color(byte: u8) -> Color {
+  match byte {
+    0 => Color::Black,
+    1 => Color::White,
+    2 | 9 => Color::Grey,
+    3 | 10 => Color::Red,
+    4 | 11 => Color::Green,
+    5 | 12 => Color::Blue,
+    6 | 13 => Color::Magenta,
+    7 | 14 => Color::Yellow,
+    _ => Color::Cyan,
+  }
+}
+
+fn read_screen_state(cpu: &CPU, frame: &mut [u8; 32 * 3 * 32]) -> bool {
+  let mut frame_idx = 0;
+  let mut update = false;
+  for i in 0x0200..0x600 {
+    let color_idx = cpu.mem_read(i as u16);
+    let (b1, b2, b3) = color(color_idx).rgb();
+    if frame[frame_idx] != b1 || frame[frame_idx + 1] != b2 || frame[frame_idx + 2] != b3 {
+      frame[frame_idx] = b1;
+      frame[frame_idx + 1] = b2;
+      frame[frame_idx + 2] = b3;
+      update = true;
+    }
+    frame_idx += 3;
+  }
+  update
 }
 
 const STACK: u16 = 0x0100;
@@ -226,8 +259,6 @@ impl CPU {
     // TODO - we might have run as address in future
     self.program_counter = self.mem_read_u16(0xFFFC);
     loop {
-      callback(self);
-
       let code = self.mem_read(self.program_counter);
       self.program_counter += 1;
       let program_counter_state = self.program_counter;
@@ -524,6 +555,8 @@ impl CPU {
       if program_counter_state == self.program_counter {
         self.program_counter += (opcode.len - 1) as u16;
       }
+
+      callback(self);
     }
   }
   fn ldy(&mut self, mode: &AddressingMode) {
