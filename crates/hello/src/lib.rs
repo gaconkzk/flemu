@@ -1,11 +1,19 @@
 #![feature(once_cell)] // 1.53.0-nightly (2021-04-01 d474075a8f28ae9a410e)
+use crate::nes::cpu::Mem;
+use crate::nes::cpu::{read_screen_state, render_screen};
+use kurbo::*;
+use piet::*;
+use piet_web::*;
+use rand::Rng;
 use std::{lazy::SyncLazy, sync::Mutex};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{window, WebGl2RenderingContext, WebGlProgram, WebGlShader};
-use piet::*;
-use kurbo::*;
-use piet_web::*;
+use web_sys::{window, CanvasRenderingContext2d};
+
+// use std::time::Duration;
+// use wasm_timer::sleep;
+
+use gloo_events::EventListener;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -31,154 +39,103 @@ macro_rules! console_log {
 	($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
 }
 
+fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+  window()
+    .unwrap()
+    .request_animation_frame(f.as_ref().unchecked_ref())
+    .expect("should register `requestAnimationFrame` OK");
+}
+
 #[wasm_bindgen]
 pub fn make_nes(canvas_id: &str) -> Result<(), JsValue> {
-  CPU.lock().unwrap().reset();
+  let mut cpu = CPU.lock().unwrap();
+  cpu.reset();
+
+  let game_code = vec![
+    0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0x20, 0x2a, 0x06, 0x60, 0xa9, 0x02, 0x85,
+    0x02, 0xa9, 0x04, 0x85, 0x03, 0xa9, 0x11, 0x85, 0x10, 0xa9, 0x10, 0x85, 0x12, 0xa9, 0x0f, 0x85,
+    0x14, 0xa9, 0x04, 0x85, 0x11, 0x85, 0x13, 0x85, 0x15, 0x60, 0xa5, 0xfe, 0x85, 0x00, 0xa5, 0xfe,
+    0x29, 0x03, 0x18, 0x69, 0x02, 0x85, 0x01, 0x60, 0x20, 0x4d, 0x06, 0x20, 0x8d, 0x06, 0x20, 0xc3,
+    0x06, 0x20, 0x19, 0x07, 0x20, 0x20, 0x07, 0x20, 0x2d, 0x07, 0x4c, 0x38, 0x06, 0xa5, 0xff, 0xc9,
+    0x77, 0xf0, 0x0d, 0xc9, 0x64, 0xf0, 0x14, 0xc9, 0x73, 0xf0, 0x1b, 0xc9, 0x61, 0xf0, 0x22, 0x60,
+    0xa9, 0x04, 0x24, 0x02, 0xd0, 0x26, 0xa9, 0x01, 0x85, 0x02, 0x60, 0xa9, 0x08, 0x24, 0x02, 0xd0,
+    0x1b, 0xa9, 0x02, 0x85, 0x02, 0x60, 0xa9, 0x01, 0x24, 0x02, 0xd0, 0x10, 0xa9, 0x04, 0x85, 0x02,
+    0x60, 0xa9, 0x02, 0x24, 0x02, 0xd0, 0x05, 0xa9, 0x08, 0x85, 0x02, 0x60, 0x60, 0x20, 0x94, 0x06,
+    0x20, 0xa8, 0x06, 0x60, 0xa5, 0x00, 0xc5, 0x10, 0xd0, 0x0d, 0xa5, 0x01, 0xc5, 0x11, 0xd0, 0x07,
+    0xe6, 0x03, 0xe6, 0x03, 0x20, 0x2a, 0x06, 0x60, 0xa2, 0x02, 0xb5, 0x10, 0xc5, 0x10, 0xd0, 0x06,
+    0xb5, 0x11, 0xc5, 0x11, 0xf0, 0x09, 0xe8, 0xe8, 0xe4, 0x03, 0xf0, 0x06, 0x4c, 0xaa, 0x06, 0x4c,
+    0x35, 0x07, 0x60, 0xa6, 0x03, 0xca, 0x8a, 0xb5, 0x10, 0x95, 0x12, 0xca, 0x10, 0xf9, 0xa5, 0x02,
+    0x4a, 0xb0, 0x09, 0x4a, 0xb0, 0x19, 0x4a, 0xb0, 0x1f, 0x4a, 0xb0, 0x2f, 0xa5, 0x10, 0x38, 0xe9,
+    0x20, 0x85, 0x10, 0x90, 0x01, 0x60, 0xc6, 0x11, 0xa9, 0x01, 0xc5, 0x11, 0xf0, 0x28, 0x60, 0xe6,
+    0x10, 0xa9, 0x1f, 0x24, 0x10, 0xf0, 0x1f, 0x60, 0xa5, 0x10, 0x18, 0x69, 0x20, 0x85, 0x10, 0xb0,
+    0x01, 0x60, 0xe6, 0x11, 0xa9, 0x06, 0xc5, 0x11, 0xf0, 0x0c, 0x60, 0xc6, 0x10, 0xa5, 0x10, 0x29,
+    0x1f, 0xc9, 0x1f, 0xf0, 0x01, 0x60, 0x4c, 0x35, 0x07, 0xa0, 0x00, 0xa5, 0xfe, 0x91, 0x00, 0x60,
+    0xa6, 0x03, 0xa9, 0x00, 0x81, 0x10, 0xa2, 0x00, 0xa9, 0x01, 0x81, 0x10, 0x60, 0xa6, 0xff, 0xea,
+    0xea, 0xca, 0xd0, 0xfb, 0x60,
+  ];
+
+  cpu.load(game_code);
 
   // get canvas and webgl context
-	let window = window().unwrap();
+  let window = window().unwrap();
   let document = web_sys::window().unwrap().document().unwrap();
+  let wasm_div = document.get_element_by_id("wasm").unwrap();
   let canvas = document.get_element_by_id(canvas_id).unwrap();
   let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
 
-  // let context = canvas
-  //   .get_context("webgl2")?
-  //   .unwrap()
-  //   .dyn_into::<WebGl2RenderingContext>()?;
+  let context = canvas
+    .get_context("2d")?
+    .unwrap()
+    .dyn_into::<CanvasRenderingContext2d>()?;
 
-  // let vert_shader = compile_shader(
-  //   &context,
-  //   WebGl2RenderingContext::VERTEX_SHADER,
-  //   r##"#version 300 es
+  let mut rc = WebRenderContext::new(context, window);
 
-	// 		in vec4 position;
+  // let whole_board = Rect::new(0., 0., 32 as f64, 32 as f64);
+  // rc.clear(whole_board, Color::rgb8(0xf4,0xf4,0xf4));
 
-	// 		void main() {
+  // 32 cols with 3bytes per point, and 32 rows
+  let mut screen_state = [0 as u8; 32 * 3 * 32];
 
-	// 				gl_Position = position;
-	// 		}
-	// 		"##,
-  // )?;
+  // map screen with above 32x32
+  let mut cscr = Rect::new(0., 0., 320.0, 320.0);
+  // clear above
+  rc.clear(cscr, Color::rgb8(0xff, 0xff, 0xff));
 
-  // let frag_shader = compile_shader(
-  //   &context,
-  //   WebGl2RenderingContext::FRAGMENT_SHADER,
-  //   r##"#version 300 es
+  let mut rng = rand::thread_rng();
 
-	// 		precision highp float;
-	// 		out vec4 outColor;
+  // handle_user_input(cpu, &mut event_pump);
+  // cpu.mem_write(0xfe, rng.gen_range(1..=16));
+  // keyboard event??
+  let on_keydown = EventListener::new(&wasm_div, "keydown", move |event| {
+    let keyboard_event = event.clone().dyn_into::<web_sys::KeyboardEvent>().unwrap();
+    let mut event_string = String::from("");
+    event_string.push_str(&event.type_());
+    event_string.push_str(&" : ");
+    event_string.push_str(&keyboard_event.key());
 
-	// 		void main() {
-	// 				outColor = vec4(1, 1, 1, 1);
-	// 		}
-	// 		"##,
-  // )?;
+    unsafe {
+      console_log!("key pressed, {}", event_string);
+    }
+  });
 
-  // let program = link_program(&context, &vert_shader, &frag_shader)?;
-  // context.use_program(Some(&program));
+  // on_keydown.forget();
 
-  // let vertices: [f32; 9] = [-0.7, -0.7, 0.0, 0.7, -0.7, 0.0, 0.0, 0.7, 0.0];
+  // run the game cycle
+  cpu.step_run(move |cpu| {
+    unsafe {
+      console_log!("Running inside {}", canvas_id);
+    }
 
-  // let position_attribute_location = context.get_attrib_location(&program, "position");
-  // let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
-  // context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
+    if read_screen_state(cpu, &mut screen_state) {
+      // map screen_state to cscr
+      render_screen(&mut rc, &mut screen_state)
+    }
 
-  // // Note that `Float32Array::view` is somewhat dangerous (hence the
-  // // `unsafe`!). This is creating a raw view into our module's
-  // // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
-  // // (aka do a memory allocation in Rust) it'll cause the buffer to change,
-  // // causing the `Float32Array` to be invalid.
-  // //
-  // // As a result, after `Float32Array::view` we have to be very careful not to
-  // // do any memory allocations before it's dropped.
-  // unsafe {
-  //   let positions_array_buf_view = js_sys::Float32Array::view(&vertices);
-
-  //   context.buffer_data_with_array_buffer_view(
-  //     WebGl2RenderingContext::ARRAY_BUFFER,
-  //     &positions_array_buf_view,
-  //     WebGl2RenderingContext::STATIC_DRAW,
-  //   );
-  // }
-
-  // let vao = context
-  //   .create_vertex_array()
-  //   .ok_or("Could not create vertex array object")?;
-  // context.bind_vertex_array(Some(&vao));
-
-  // context.vertex_attrib_pointer_with_i32(0, 3, WebGl2RenderingContext::FLOAT, false, 0, 0);
-  // context.enable_vertex_attrib_array(position_attribute_location as u32);
-
-  // context.bind_vertex_array(Some(&vao));
-
-  // let vert_count = (vertices.len() / 3) as i32;
-  // draw(&context, vert_count);
-
-  unsafe {
-    console_log!("Hello {}!", canvas_id);
-  }
+    // ::std::thread::sleep(std::time::Duration::new(0, 70_000));
+    // ::std::thread::sleep(std::time::Duration::new(0, 70_000));
+    // sleep(Duration::new(0, 70_000));
+  });
   Ok(())
-}
-
-fn draw(context: &WebGl2RenderingContext, vert_count: i32) {
-  context.clear_color(0.0, 0.0, 0.0, 1.0);
-  context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
-  context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vert_count);
-}
-
-pub fn compile_shader(
-  context: &WebGl2RenderingContext,
-  shader_type: u32,
-  source: &str,
-) -> Result<WebGlShader, String> {
-  let shader = context
-    .create_shader(shader_type)
-    .ok_or_else(|| String::from("Unable to create shader object"))?;
-  context.shader_source(&shader, source);
-  context.compile_shader(&shader);
-
-  if context
-    .get_shader_parameter(&shader, WebGl2RenderingContext::COMPILE_STATUS)
-    .as_bool()
-    .unwrap_or(false)
-  {
-    Ok(shader)
-  } else {
-    Err(
-      context
-        .get_shader_info_log(&shader)
-        .unwrap_or_else(|| String::from("Unknown error creating shader")),
-    )
-  }
-}
-
-pub fn link_program(
-  context: &WebGl2RenderingContext,
-  vert_shader: &WebGlShader,
-  frag_shader: &WebGlShader,
-) -> Result<WebGlProgram, String> {
-  let program = context
-    .create_program()
-    .ok_or_else(|| String::from("Unable to create shader object"))?;
-
-  context.attach_shader(&program, vert_shader);
-  context.attach_shader(&program, frag_shader);
-  context.link_program(&program);
-
-  if context
-    .get_program_parameter(&program, WebGl2RenderingContext::LINK_STATUS)
-    .as_bool()
-    .unwrap_or(false)
-  {
-    Ok(program)
-  } else {
-    Err(
-      context
-        .get_program_info_log(&program)
-        .unwrap_or_else(|| String::from("Unknown error creating program object")),
-    )
-  }
 }
 
 pub mod color;
