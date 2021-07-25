@@ -103,10 +103,8 @@ pub fn make_nes(canvas_id: &str) -> Result<(), JsValue> {
 
   let mut rng = rand::thread_rng();
 
-  // handle_user_input(cpu, &mut event_pump);
-  // cpu.mem_write(0xfe, rng.gen_range(1..=16));
   // keyboard event??
-  let on_keydown = EventListener::new(&wasm_div, "keydown", move |event| {
+  let on_keydown = EventListener::new(&canvas, "keydown", move |event| {
     let keyboard_event = event.clone().dyn_into::<web_sys::KeyboardEvent>().unwrap();
     let mut event_string = String::from("");
     event_string.push_str(&event.type_());
@@ -114,11 +112,26 @@ pub fn make_nes(canvas_id: &str) -> Result<(), JsValue> {
     event_string.push_str(&keyboard_event.key());
 
     unsafe {
-      console_log!("key pressed, {}", event_string);
+      console_log!("key event, {}", event_string);
+    }
+  });
+  on_keydown.forget();
+
+  // keyboard event??
+  let on_keyup = EventListener::new(&canvas, "keyup", move |event| {
+    let keyboard_event = event.clone().dyn_into::<web_sys::KeyboardEvent>().unwrap();
+    let mut event_string = String::from("");
+    event_string.push_str(&event.type_());
+    event_string.push_str(&" : ");
+    event_string.push_str(&keyboard_event.key());
+
+    unsafe {
+      console_log!("key event, {}", event_string);
     }
   });
 
-  // on_keydown.forget();
+  // listen forever
+  on_keyup.forget();
 
   // run the game cycle
   cpu.step_run(move |cpu| {
